@@ -1,0 +1,74 @@
+name: Deploy Docker App to Azure VM
+
+on:
+  push:
+    branches: [ main ]
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      # Step 1: Get latest repository code
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      # Step 2: Copy project files to VM
+      - name: Copy files to Azure VM
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ secrets.VM_IP_ADDRESS }}
+          username: azureuser
+          key: ${{ secrets.AZURE_VM_SSH_KEY }}
+          source: "./*"
+          target: "/home/azureuser/myapp"
+
+      # Step 3: Connect to VM and deploy container
+      - name: Deploy Docker Container
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.VM_IP_ADDRESS }}
+          username: azureuser
+          key: ${{ secrets.AZURE_VM_SSH_KEY }}
+          script: |
+
+            echo "Checking Docker installation..."
+
+            # install Docker if missing
+            if ! command -v docker &> /dev/null
+            then
+              echo "Docker not found. Installing Docker..."
+
+              sudo apt update
+              sudo apt install docker.io -y
+
+              sudo systemctl start docker
+              sudo systemctl enable docker
+
+              sudo usermod -aG docker azureuser
+            else
+              echo "Docker already installed"
+            fi
+
+            # go to project directory
+           
+            cd /home/azureuser/myapp
+
+            echo "Stopping old container if exists..."
+
+            sudo docker stop myapp || true
+            sudo docker rm myapp || true
+
+            echo "Building Docker image..."
+
+            sudo docker build -t myapp .
+
+            echo "Running new container..."
+
+            sudo docker run -d \
+              --name myapp \
+              -p 8080:5000 \
+              --restart unless-stopped \
+              myapp
+
+            echo "Deployment finished successfully!"
